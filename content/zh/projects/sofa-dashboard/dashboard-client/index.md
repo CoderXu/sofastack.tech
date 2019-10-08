@@ -6,19 +6,19 @@ aliases: "/sofa-dashboard/docs/DashboardClient"
 SOFADashboard 支持查看应用的IP、端口、健康检查状态等基本信息。此功能依赖 SOFADashboard client ，如果一个应用需要将应用信息展示到 SOFADashboard 管控端，可以通过引入客户端依赖即可：
 
 ```xml
-<denpendency>
+<dependency>
     <groupId>com.alipay.sofa</groupId>
     <artifactId>dashboard-client-sofa-boot-starter</artifactId>
-</denpendency>
+</dependency>
 ```
 
 除此之外，SOFADashboard 解耦了类似于 SpringBoot Admin 客户端和服务端直连的模式，引入了第三方的储存，目前默认是 redis，因此如果希望能够监控 更多 actuator 信息，可以添加如下依赖：
 
 ```xml
-<denpendency>
+<dependency>
      <groupId>com.alipay.sofa</groupId>
     <artifactId>dashboard-ext-redis-store</artifactId>
-</denpendency>
+</dependency>
 ```
 
 ## 功能展示
