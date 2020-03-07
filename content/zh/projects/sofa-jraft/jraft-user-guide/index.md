@@ -2,19 +2,20 @@
 title: "JRaft 用户指南"
 ---
 
-## 0. 基本概念说明
+## 1. 基本概念说明
 
 * log index 提交到 raft group 中的任务都将序列化为一条日志存储下来，每条日志一个编号，在整个 raft group 内单调递增并复制到每个 raft 节点。
 * term 在整个 raft group 中单调递增的一个 long 数字，可以简单地认为表示一轮投票的编号，成功选举出来的 leader 对应的 term 称为 leader term，在这个 leader 没有发生变更的阶段内提交的日志都将拥有相同的 term 编号。
 
-## 1. 配置和辅助类
+## 2. 配置和辅助类
 
 本节主要介绍 jraft 的配置和辅助工具相关接口和类。核心包括：
+
 * Endpoint 表示一个服务地址。
 * PeerId 表示一个 raft 参与节点。
 * Configuration 表示一个 raft group 配置，也就是节点列表。
 
-### 1.1 地址 Endpoint
+### 2.1 地址 Endpoint
 
 Endpoint 表示一个服务地址，包括 IP 和端口， __raft 节点不允许启动在 0.0.0.0  所有的 IPv4 上，需要明确指定启动的 IP__
 创建一个地址，绑定在 localhost 的 8080 端口上，如下例：
@@ -25,7 +26,7 @@ Endpoint 表示一个服务地址，包括 IP 和端口， __raft 节点不允�
   boolean success = addr.parse(s);  // 可以从字符串解析出地址，结果为 true
 ```
 
-### 1.2 节点 PeerId
+### 2.2 节点 PeerId
 
 PeerId 表示一个 raft 协议的参与者（leader/follower/candidate etc.)， 它由三元素组成： ip:port:index， IP 就是节点的 IP， port 就是端口， index 表示同一个端口的序列号，目前没有用到，总被认为是 0。预留此字段是为了支持同一个端口启动不同的 raft 节点，通过  index 区分。
 
@@ -40,7 +41,7 @@ String s = peer.toString(); // 结果为 localhost:8080
 boolean success = peer.parse(s);  // 可以从字符串解析出 PeerId，结果为 true
 ```
 
-### 1.3 配置 Configuration
+### 2.3 配置 Configuration
 
 Configuration 表示一个 raft group 的配置，也就是参与者列表：
 
@@ -55,7 +56,7 @@ conf.addPeer(peer2);
 conf.addPeer(peer3);
 ```
 
-### 1.4 工具类 JRaftUtils
+### 2.4 工具类 JRaftUtils
 
 为了方便创建 Endpoint/PeerId/Configuration 等对象， jraft 提供了 JRaftUtils 来快捷地从字符串创建出所需要的对象：
 
@@ -66,7 +67,7 @@ PeerId peer = JRaftUtils.getPeerId("localhost:8080");
 Configuration conf = JRaftUtils.getConfiguration("localhost:8081,localhost:8082,localhost:8083");
 ```
 
-### 1.5 回调 Closure 和状态 Status
+### 2.5 回调 Closure 和状态 Status
 
 Closure 就是一个简单的 callback 接口， jraft 提供的大部分方法都是异步的回调模式，结果通过此接口通知：
 
@@ -101,7 +102,7 @@ String filePath = "/tmp/test";
 Status status = new Status(RaftError.EIO, "Fail to read file from %s", filePath);
 ```
 
-### 1.6 任务 Task
+### 2.6 任务 Task
 
 Task 是用户使用 jraft 最核心的类之一，用于向一个 raft 复制分组提交一个任务，这个任务提交到 leader，并复制到其他 follower 节点， Task 包括：
 
@@ -135,7 +136,7 @@ public interface TaskClosure extends Closure {
 
 当 jraft 发现  task 的 done 是 `TaskClosure` 的时候，会在 RAFT 日志提交到 RAFT group 之后（并复制到多数节点），应用到状态机之前调用 `onCommitted` 方法。
 
-## 2. 服务端
+## 3. 服务端
 
 本节主要介绍 jraft 服务端编程的主要接口和类，核心是:
 
@@ -144,7 +145,7 @@ public interface TaskClosure extends Closure {
 * RPC 服务： raft 节点之间通过 RPC 服务通讯（选举、复制等）
 * RaftGroupService：一个辅助编程框架类，方便地“组装”起一个 raft group 节点。
 
-### 2.1 迭代器 Iterator
+### 3.1 迭代器 Iterator
 
 提交的 task ，在 jraft 内部会做累积批量提交，应用到状态机的是一个 task 迭代器，通过  `com.alipay.sofa.jraft.Iterator` 接口表示，一个典型的例子：
 
@@ -165,11 +166,11 @@ while(it.hasNext()){
 
 这里有一个优化技巧，<strong>通常 leader 获取到的 done closure，可以扩展包装一个 closure 类 包含了没有序列化的用户请求，那么在逻辑处理部分可以直接从 closure 获取到用户请求，无需通过 </strong><code><strong>data</strong></code><strong> 反序列化得到，减少了 leader 的 CPU 开销</strong>，具体可参见 counter 例子。
 
-### 2.2 状态机 StateMachine
+### 3.2 状态机 StateMachine
 
 提交的任务最终将会复制应用到所有 raft 节点上的状态机，状态机通过 `StateMachine` 接口表示，它的主要方法包括：
 
-* `void onApply(Iterator iter)` 最核心的方法，应用任务列表到状态机，任务将按照提交顺序应用。<strong>请注意，当这个方法返回的时候，我们就认为这一批任务都已经成功应用到状态机上，如果你没有完全应用（比如错误、异常），将会被当做一个 critical 级别的错误，报告给状态机的 </strong><code><strong>onError</strong></code><strong> 方法，错误类型为 </strong><code><strong>ERROR_TYPE_STATE_MACHINE</strong></code><strong> </strong>。关于故障和错误处理参见下面的第 6 节。
+* `void onApply(Iterator iter)` 最核心的方法，应用任务列表到状态机，任务将按照提交顺序应用。<strong>请注意，当这个方法返回的时候，我们就认为这一批任务都已经成功应用到状态机上，如果你没有完全应用（比如错误、异常），将会被当做一个 critical 级别的错误，报告给状态机的 </strong><code><strong>onError</strong></code><strong> 方法，错误类型为 </strong><code><strong>ERROR_TYPE_STATE_MACHINE</strong></code><strong> </strong>。关于故障和错误处理参见下面的第 7 节。
 * `void onError(RaftException e)`  当 critical 错误发生的时候，会调用此方法，RaftException 包含了 status 等详细的错误信息__；当这个方法被调用后，将不允许新的任务应用到状态机，直到错误被修复并且节点被重启__。因此对于任何在开发阶段发现的错误，都应当及时做修正，如果是 jraft 的问题，请及时报告。
 * `void onLeaderStart(long term)` 当状态机所属的 raft 节点成为 leader 的时候被调用，成为 leader 当前的 term 通过参数传入。
 * `void onLeaderStop(Status status)` 当前状态机所属的 raft 节点失去 leader 资格时调用，`status` 字段描述了详细的原因，比如主动转移 leadership、重新发生选举等。
@@ -177,7 +178,7 @@ while(it.hasNext()){
 * `void onStopFollowing(LeaderChangeContext ctx)` 当一个 raft follower 停止 follower 一个 leader 节点的时候调用，这种情况一般是发生了 leadership 转移，比如重新选举产生了新的 leader，或者进入选举阶段等。同样 `LeaderChangeContext` 描述了停止 follow 的 leader 的信息，其中 status 描述了停止 follow 的原因。
 * `void onConfigurationCommitted(Configuration conf)` 当一个 raft group 的节点配置提交到 raft group 日志的时候调用，通常不需要实现此方法，或者打印个日志即可。
 * `void onShutdown()` 当状态机所在 raft 节点被关闭的时候调用，可以用于一些状态机的资源清理工作，比如关闭文件等。
-* `onSnapshotSave` 和 `onSnapshotLoad` Snapshot 的保存和加载，见 2.6 小节。
+* `onSnapshotSave` 和 `onSnapshotLoad` Snapshot 的保存和加载，见 3.6 小节。
 
 因为 StateMachine 接口的方法比较多，并且大多数方法可能不需要做一些业务处理，因此 jraft 提供了一个 StateMachineAdapter 桥接类，方便适配实现状态机，除了强制要实现 `onApply` 方法外，其他方法都提供了默认实现，也就是简单地打印日志，用户可以选择实现特定的方法：
 
@@ -202,7 +203,7 @@ public TestStateMachine extends StateMachineAdapter {
 }
 ```
 
-### 2.3 Raft 节点 Node
+### 3.3 Raft 节点 Node
 
 Node 接口表示一个 raft 的参与节点，他的角色可能是 leader、follower 或者 candidate，随着选举过程而转变。
 
@@ -211,9 +212,9 @@ Node 接口最核心的几个方法如下：
 * `void apply(Task task)` __提交一个新任务到 raft group，此方法是线程安全并且非阻塞__，无论任务是否成功提交到 raft group，都会通过 task 关联的 closure done 通知到。如果当前节点不是 leader，会直接失败通知 done closure。
 * `PeerId getLeaderId()` 获取当前 raft group 的 leader peerId，如果未知，返回 null
 * `shutdown` 和 `join` ，前者用于停止一个 raft 节点，后者可以在 shutdown 调用后等待停止过程结束。
-* `void snapshot(Closure done)` 触发当前节点执行一次 snapshot 保存操作，结果通过 done 通知，参见 2.6 节。
+* `void snapshot(Closure done)` 触发当前节点执行一次 snapshot 保存操作，结果通过 done 通知，参见 3.6 节。
 
-其他一些方法都是查询节点信息以及变更 raft group 节点配置，参见第 5 节。
+其他一些方法都是查询节点信息以及变更 raft group 节点配置，参见第 6 节。
 
 创建一个 raft 节点可以通过 `RaftServiceFactory.createRaftNode(String groupId, PeerId serverId)` 静态方法，其中
 
@@ -271,7 +272,7 @@ if(!node.init(opts))
 Node node = RaftServiceFactory.createAndInitRaftNode(groupId, serverId, nodeOpts);
 ```
 
-### 2.4 RPC 服务
+### 3.4 RPC 服务
 
 单纯一个 raft node 是没有什么用，测试可以是单个节点，但是正常情况下一个 raft grup 至少应该是三个节点，如果考虑到异地多机房容灾，应该扩展到5个节点。
 
@@ -320,7 +321,61 @@ RpcClient rpcClient = ((AbstractBoltClientService) (((NodeImpl) node).getRpcServ
 
 __这样可以做到一些资源复用，减少消耗，代价就是依赖了 jraft 的内部实现和缺少一些可自定义配置。__
 
-### 2.5 框架类 RaftGroupService
+如果基于 Bolt 依赖支持 raft node 之间 RPC 服务 SSL/TLS，需要下面的步骤:
+
+* 服务端 `RpcServer` 配置以下环境变量：
+
+```
+// RpcServer init
+bolt.server.ssl.enable = true // 是否开启服务端 SSL 支持，默认为 false
+bolt.server.ssl.clientAuth = true // 是否开启服务端 SSL 客户端认证，默认为 false
+bolt.server.ssl.keystore = bolt.pfx // 服务端 SSL keystore 文件路径
+bolt.server.ssl.keystore.password = sfbolt // 服务端 SSL keystore 密码
+bolt.server.ssl.keystore.type = pkcs12 // 服务端 SSL keystore 类型，例如 JKS 或者 pkcs12
+bolt.server.ssl.kmf.algorithm = SunX509 // 服务端 SSL kmf 算法
+
+// RpcServer stop
+bolt.server.ssl.enable = false
+bolt.server.ssl.clientAuth = false 
+```
+
+* 客户端 `RpcClient` 配置环境变量如下：
+
+```
+// RpcClient init
+bolt.client.ssl.enable = true // 是否开启客户端 SSL 支持，默认为 false
+bolt.client.ssl.keystore = cbolt.pfx // 客户端 SSL keystore 文件路径
+bolt.server.ssl.keystore.password = sfbolt // 客户端 SSL keystore 密码
+bolt.client.ssl.keystore.type = pkcs12 // 客户端 SSL keystore 类型，例如 JKS 或者 pkcs12
+bolt.client.ssl.tmf.algorithm = SunX509 // 客户端 SSL tmf 算法
+
+// RpcClient stop
+bolt.client.ssl.enable = false
+```
+
+其中服务端 SSL keystore 文件 `bolt.pfx` 和客户端 SSL keystore 文件 `cbolt.pfx` 按照以下步骤生成：
+
+* 首先生成 keystore 并且导出其认证文件。
+  
+```sh
+keytool -genkey -alias securebolt -keysize 2048 -validity  365 -keyalg RSA -dname "CN=localhost" -keypass sfbolt -storepass sfbolt -keystore bolt.pfx -deststoretype pkcs12
+  
+keytool -export -alias securebolt -keystore bolt.pfx -storepass sfbolt -file bolt.cer
+```
+
+* 接着生成客户端 keystore。
+  
+```sh
+keytool -genkey -alias smcc -keysize 2048 -validity 365 -keyalg RSA -dname "CN=localhost" -keypass sfbolt -storepass sfbolt -keystore cbolt.pfx -deststoretype pkcs12
+```
+
+* 最后导入服务端认证文件到客户端 keystore。
+  
+```sh
+keytool -import -trustcacerts -alias securebolt -file bolt.cer -storepass sfbolt -keystore cbolt.pfx
+```
+
+### 3.5 框架类 RaftGroupService
 
 总结下上文描述的创建和启动一个 raft group 节点的主要阶段：
 
@@ -354,7 +409,7 @@ public RaftGroupService(String groupId, PeerId serverId, NodeOptions nodeOptions
 
 这个传入的 RpcServer 必须调用了 `RaftRpcServerFactory.addRaftRequestProcessors(rpcServer)` 注册了 raft 协议处理器。
 
-### 2.6 Snapshot 服务
+### 3.6 Snapshot 服务
 
 当一个 raft 节点重启的时候，内存中的状态机的状态将会丢失，在启动过程中将重放日志存储中的所有日志，重建整个状态机实例。这就导致 3 个问题：
 
@@ -381,18 +436,23 @@ node.snapshot(done);
 
 ```java
 // 保存状态的最新状态，保存的文件信息可以写到 SnapshotWriter 中，保存完成切记调用 done.run(status) 方法。
+// 通常情况下，每次 `onSnapshotSave` 被调用都应该阻塞状态机（同步调用）以保证用户可以捕获当前状态机的状态，如果想通过异步 snapshot 来提升性能，
+// 那么需要用户状态机支持快照读，并先同步读快照，再异步保存快照数据。
 void onSnapshotSave(SnapshotWriter writer, Closure done);
 // 加载或者安装 snapshot，从 SnapshotReader 读取 snapshot 文件列表并使用。
+// 需要注意的是:
+//   程序启动会调用 `onSnapshotLoad` 方法，也就是说业务状态机的数据一致性保障全权由 jraft 接管，业务状态机的启动时应保持状态为空，
+// 如果状态机持久化了数据那么应该在启动时先清除数据，并依赖 raft snapshot + replay raft log 来恢复状态机数据。
 boolean onSnapshotLoad(SnapshotReader reader);
 ```
 
 更具体的实现请参考[counter 例子](https://github.com/sofastack/sofa-jraft/wiki/Counter-%E4%BE%8B%E5%AD%90%E8%AF%A6%E8%A7%A3)。
 
-## 3. 客户端
+## 4. 客户端
 
 在构建完成 raft group 服务端集群后，客户端需要跟 raft group 交互，本节主要介绍 jraft 提供的一些客户端服务。
 
-### 3.1 路由表 RouteTable
+### 4.1 路由表 RouteTable
 
 首先要介绍的是 RouteTable 类，用来维护到 raft group 的路由信息。使用很简单，它是一个全局单例，参见下面例子：
 
@@ -418,7 +478,7 @@ if(success){
 
 RouteTable 还有一些查询和删除配置的方法，请直接查看接口注释。
 
-### 3.2 CLI 服务
+### 4.2 CLI 服务
 
 CLI 服务就是 Client CommandLine Service，是 jraft 在 raft group 节点提供的 RPC 服务中暴露了一系列用于管理 raft group 的服务接口，例如增加节点、移除节点、改变节点配置列表、重置节点配置以及转移 leader 等功能。
 
@@ -462,18 +522,18 @@ if(status.isOk()){
 }
 ```
 
-### 3.3 RPC 服务
+### 4.3 RPC 服务
 
 客户端的通讯层都依赖 Bolt 的 RpcClient，封装在 `CliClientService` 接口中，实现类就是 `BoltCliClientService` 。
 可以通过 BoltCliClientService 的 `getRpcClient` 方法获取底层的 bolt RpcClient 实例，用于其他通讯用途，做到资源复用。
 
 RouteTable 更新 leader 信息同样需要传入 `CliClientService` 实例，<span data-type="color" style="color:#000000"><span data-type="background" style="background-color:#ffffff">用户应该尽量复用这些底层通讯组件，而非重复创建</span></span>用。
 
-## 4. 节点配置变更
+## 5. 节点配置变更
 
-参见 3.2 节。可以通过 CliService，也可以通过 Leader 节点 Node 的系列方法来变更，实质上 CliService 都是转发到 leader 节点执行。
+参见 4.2 节。可以通过 CliService，也可以通过 Leader 节点 Node 的系列方法来变更，实质上 CliService 都是转发到 leader 节点执行。
 
-## 5. 线性一致读
+## 6. 线性一致读
 
 所谓线性一致性，一个简单的例子就是在 t1 的时间我们写入了一个值，那么在 t1 之后，我们的读一定能读到这个值，不可能读到 t1 之前的值。
 
@@ -538,7 +598,7 @@ public enum ReadOnlyOption {
 
 两个实现的性能差距大概在 15% 左右。
 
-## 6. 故障和保证
+## 7. 故障和保证
 
 这里说明下 raft group 可能遇到的故障，以及在各种故障情况下的一致性和可用性保证。这里的故障包括:
 
@@ -552,27 +612,27 @@ public enum ReadOnlyOption {
 
 并且我们将节点提供给客户端的服务分为两类：
 
-* __读服务__，可以从 leader，也可以从 follower 读取状态机数据，但是从 follower 读取的可能不是最新的数据，存在时间差，也就是存在脏读。启用线性一致读将保证线性一致，并且支持从 follower 读取，具体参见第 5 节。
+* __读服务__，可以从 leader，也可以从 follower 读取状态机数据，但是从 follower 读取的可能不是最新的数据，存在时间差，也就是存在脏读。启用线性一致读将保证线性一致，并且支持从 follower 读取，具体参见第 6 节。
 * __写服务__，更改状态机数据，只能提交到 leader 写入。
 
-### 6.1 单个节点故障
+### 7.1 单个节点故障
 
 单个节点故障，对于整个 raft group 而言，可以继续提供读服务，短暂无法提供写服务，数据一致性没有影响：
 
 1. 如果节点是 leader，那么 raft group 在最多 election timeout 时间后开始选举，产生新的 leader。在产生新 leader 之前，写入服务终止，读服务继续提供，但是可能频繁遇到脏读。线性一致读也将无法服务。
 2. 如果节点是 follower，对读和写都没有影响，只是发往某个 follower 的读请求将失败，应用应当重试这些请求到其他节点。
 
-### 6.2 少数节点故障
+### 7.2 少数节点故障
 
 不大于半数节点的故障称为少数节点故障，这种情况与单个节点的故障情况类似，不再重复讨论。
 
-### 6.3 多数节点故障
+### 7.3 多数节点故障
 
 超过半数节点的故障称为多数节点故障，这种情况下，整个 raft group 已经不具有可用性，少数节点仍然能提供只读服务，但是无法选举出新的 leader（因为不够半数以上），写入服务就无法恢复，需要尽快恢复故障节点，达到过半数。
 
 在故障节点无法快速恢复的情况下，可以通过 CliService 提供的 `resetPeers(Configuration newPeers)` 方法强制设定剩余存活节点的配置，丢弃故障节点，让剩余节点尽快选举出新的 leader，代价可能是丢失数据，失去一致性承诺，__只有在非常紧急并且可用性更为重要的情况下使用__。
 
-### 6.4 故障与状态机
+### 7.4 故障与状态机
 
 当一个  raft 节点故障的时候，如果没有发生磁盘损坏等不可逆的存储故障，那么在重新启动该节点的情况下：
 
@@ -581,7 +641,7 @@ public enum ReadOnlyOption {
 
 如果发生磁盘损坏，日志、snapshot 等存储被损坏，那么必须在修正磁盘错误后，该节点在重新启动后从 leader 重新拉取 snapshot 和日志，回放日志，使得状态机达到最新状态。
 
-### 6.5 故障与存储
+### 7.5 故障与存储
 
 NodeOptions 有一个 `raftOptions` 选项，用于设置跟性能和数据可靠性相关的参数，其中
 
@@ -594,7 +654,7 @@ private boolean sync = true;
 
 只有当你确信这个情况可以容忍的时候，才可以设置为 false。
 
-## 7. Metrics 监控
+## 8. Metrics 监控
 
 JRaft 内置了基于 [metrics](https://metrics.dropwizard.io/4.0.0/getting-started.html) 类库的性能指标统计，默认不开启，可以通过  `NodeOptions` 的 `setEnableMetrics(true)` 来启用。
 
@@ -926,9 +986,9 @@ append-logs
   </table>
 </div>
 
-## 8. 性能优化建议
+## 9. 性能优化建议
 
-### 8.1 Raft 节点性能相关配置
+### 9.1 Raft 节点性能相关配置
 
 NodeOptions 有一个 `raftOptions` 选项，用于设置跟性能和数据可靠性相关的参数，包括：
 
@@ -976,9 +1036,9 @@ NodeOptions 有一个 `raftOptions` 选项，用于设置跟性能和数据可�
 
 对于重度吞吐量的应用，需要适当调整缓冲区大小、批次大小等参数，以实际测试性能为准。
 
-### 8.2 针对应用的建议
+### 9.2 针对应用的建议
 
-#### 8.2.1 状态机实现建议
+#### 9.2.1 状态机实现建议
 
 * 优先继承 `StateMachineAdapter` 适配器，而非直接实现 `StateMachine` 接口，适配器提供了绝大部分默认实现。
 * 启动状态机前，需要清空状态机数据，因为 jraft 将通过 snapshot 以及 raft log 回放来恢复状态机，如果你的状态机存有旧的数据并且有非幂等操作，那么将出现数据不一致
@@ -996,20 +1056,20 @@ NodeOptions 有一个 `raftOptions` 选项，用于设置跟性能和数据可�
     }
 ```
 
-#### 8.2.2 RPC 建议
+#### 9.2.2 RPC 建议
 
 * 建议开启 CliService 服务，方便查询和管理 RAFT 集群。
 * 是否复用 RPC Server取决于应用，如果都使用 bolt RPC，建议复用，减少资源占用。
 * Task 的 data 序列化采用性能和空间相对均衡的方案，例如 protobuf 等。
 * 业务 RPC processor 不要与 JRaft RPC processor 共用线程池，避免影响 RAFT 内部协议交互。
 
-#### 8.2.3 客户端建议
+#### 9.2.3 客户端建议
 
 * 使用 `RouteTable` 管理集群信息，定期 `refreshLeader` 和 `refreshConfiguration` 获取集群最新状态。
 * 业务协议应当内置 Redirect 重定向请求协议，当写入到非 leader 节点，返回最新的 leader 信息到客户端，客户端可以做适当重试。通过定期拉取和 redirect 协议的结合，来提升客户端的可用性。
 * 建议使用线性一致读，将请求散列到集群内的所有节点上，降低 leader 的负荷压力。
 
-## 9. 如何基于 SPI 扩展
+## 10. 如何基于 SPI 扩展
 
 如果基于 SPI 扩展支持适配新 LogEntry 编/解码器，需要下面的步骤:
 
@@ -1032,10 +1092,10 @@ public @interface SPI {
 * 实现 `com.alipay.sofa.jraft.entity.codec.LogEntryCodecFactory` LogEntry 编/解码工厂接口。
 * `JRaftServiceFactory` 自定义实现指定新的 `LogEntryCodecFactory` 。
 
-## 10. 排查故障工具
+## 11. 排查故障工具
 
 在程序运行时，可以利用 Linux 平台的 SIGUSR2 信号输出节点的状态信息以及 metric 数据，具体执行方式: `kill -s SIGUSR2 pid`
-相关信息会输出到指定目录，默认在程序工作目录（cwd:  lsof -p $pid | grep cwd）生成 2 个文件：node_describe.log 和 node_describe.log，其中 node_describe.log 存储节点 metric 数据，node_describe.log 存储节点状态信息。
+相关信息会输出到指定目录，默认在程序工作目录（cwd:  lsof -p $pid | grep cwd）生成 2 个文件：node_metrics.log 和 node_describe.log，其中 node_metrics.log 存储节点 metric 数据，node_describe.log 存储节点状态信息。
 
 <div class="bi-table">
   <table>
@@ -1130,106 +1190,6 @@ replicatorGroup:
 ```text
 -- rheakv 19-7-13 15:28:15 ===============================================================
 
--- rheakv -- Histograms ------------------------------------------------------------------
-rhea-st-batch-write_-1
-             count = 12
-               min = 1
-               max = 10
-              mean = 2.36
-            stddev = 3.22
-            median = 1.00
-              75% <= 1.00
-              95% <= 10.00
-              98% <= 10.00
-              99% <= 10.00
-            99.9% <= 10.00
-send_batching_get_bytes
-             count = 0
-               min = 0
-               max = 0
-              mean = 0.00
-            stddev = 0.00
-            median = 0.00
-              75% <= 0.00
-              95% <= 0.00
-              98% <= 0.00
-              99% <= 0.00
-            99.9% <= 0.00
-send_batching_get_keys
-             count = 0
-               min = 0
-               max = 0
-              mean = 0.00
-            stddev = 0.00
-            median = 0.00
-              75% <= 0.00
-              95% <= 0.00
-              98% <= 0.00
-              99% <= 0.00
-            99.9% <= 0.00
-send_batching_get_only_safe_bytes
-             count = 0
-               min = 0
-               max = 0
-              mean = 0.00
-            stddev = 0.00
-            median = 0.00
-              75% <= 0.00
-              95% <= 0.00
-              98% <= 0.00
-              99% <= 0.00
-            99.9% <= 0.00
-send_batching_get_only_safe_keys
-             count = 0
-               min = 0
-               max = 0
-              mean = 0.00
-            stddev = 0.00
-            median = 0.00
-              75% <= 0.00
-              95% <= 0.00
-              98% <= 0.00
-              99% <= 0.00
-            99.9% <= 0.00
-send_batching_put_bytes
-             count = 0
-               min = 0
-               max = 0
-              mean = 0.00
-            stddev = 0.00
-            median = 0.00
-              75% <= 0.00
-              95% <= 0.00
-              98% <= 0.00
-              99% <= 0.00
-            99.9% <= 0.00
-send_batching_put_keys
-             count = 0
-               min = 0
-               max = 0
-              mean = 0.00
-            stddev = 0.00
-            median = 0.00
-              75% <= 0.00
-              95% <= 0.00
-              98% <= 0.00
-              99% <= 0.00
-            99.9% <= 0.00
-
--- rheakv -- Meters ----------------------------------------------------------------------
-rhea-st-apply-qps_-1
-             count = 30
-         mean rate = 1.09 events/second
-     1-minute rate = 0.40 events/second
-     5-minute rate = 0.10 events/second
-    15-minute rate = 0.03 events/second
-rhea-st-apply-qps_-1_PUT
-             count = 30
-         mean rate = 1.50 events/second
-     1-minute rate = 3.25 events/second
-     5-minute rate = 3.84 events/second
-    15-minute rate = 3.94 events/second
-
 -- rheakv -- Timers ----------------------------------------------------------------------
 rhea-db-timer_BATCH_PUT
              count = 2
@@ -1279,4 +1239,60 @@ rhea-rpc-request-timer_-1
               98% <= 0.00 milliseconds
               99% <= 0.00 milliseconds
             99.9% <= 0.00 milliseconds
+
+...
+
+
+```
+
+## 12. Rocksdb 配置更改
+
+SOFJRaft 的 log storage 默认实现基于 rocksdb 存储，默认的 rocksdb 配置为吞吐优先原则，可能不适合所有场景以及机器规格，比如 4G 内存的机器建议缩小 block_size 以避免过多的内存占用。
+
+
+```java
+final BlockBasedTableConfig conf = new BlockBasedTableConfig() //
+            // Begin to use partitioned index filters
+            // https://github.com/facebook/rocksdb/wiki/Partitioned-Index-Filters#how-to-use-it
+            .setIndexType(IndexType.kTwoLevelIndexSearch) //
+            .setFilter(new BloomFilter(16, false)) //
+            .setPartitionFilters(true) //
+            .setMetadataBlockSize(8 * SizeUnit.KB) //
+            .setCacheIndexAndFilterBlocks(false) //
+            .setCacheIndexAndFilterBlocksWithHighPriority(true) //
+            .setPinL0FilterAndIndexBlocksInCache(true) //
+            // End of partitioned index filters settings.
+            .setBlockSize(4 * SizeUnit.KB)//
+            .setBlockCacheSize(64 * SizeUnit.MB) //
+            .setCacheNumShardBits(8);
+
+StorageOptionsFactory.registerRocksDBTableFormatConfig(RocksDBLogStorage.class, conf);
+```
+
+## 13. 只读成员（Learner）
+
+从 [1.3.0 版本](https://github.com/sofastack/sofa-jraft/releases/tag/1.3.0)开始， SOFAJRaft 引入了只读成员（学习者：Learner）支持，只读的节点类似 Follower，将从 Leader 复制日志并应用到本地状态机，但是不参与选举，复制成功也不被认为是多数派的一员。简而言之，除了复制日志以外，只读成员不参与其他任何 raft 算法过程。一般应用在为某个服务创建一个只读服务的时候，实现类似读写分离的效果，或者数据冷备等场景。
+
+为一个 raft group 设置一个只读节点非常容易，任何以 `/learner` 为后缀的节点都将被认为是只读节点：
+
+```java
+// 3 节点 raft group 带一个只读节点
+Configuration conf = JRaftUtils.getConfiguration("localhost:8081,localhost:8082,localhost:8083,localhost:8084/learner");
+```
+
+上面就创建了一个 raft 分组，其中普通成员是 `localhost:8081,localhost:8082,localhost:8083`，而 `localhost:8084` 就是一个 learner 只读节点，它带有 `/learner` 后缀。你可以指定任意多个只读节点，但是由于日志复制都是从 leader 到 follower/learner，如果有大量学习者的话，可能 leader 的带宽会是一个问题，需要适当留意。
+
+Learner 节点的启动和其他 raft node 没有区别，同样可以有 `StateMachine` 和 Snapshot 机制。同时，只读节点也同样支持线性一致读 `readIndex` 调用。
+
+除了静态配置之外，你还可以通过 `CliService` 动态地增加或者移除只读节点：
+
+```java
+    // 增加只读节点
+    Status addLearners(final String groupId, final Configuration conf, final List<PeerId> learners);
+
+    // 移除只读节点
+    Status removeLearners(final String groupId, final Configuration conf, final List<PeerId> learners);
+
+    // 重新设置所有只读节点
+    Status resetLearners(final String groupId, final Configuration conf, final List<PeerId> learners);
 ```
